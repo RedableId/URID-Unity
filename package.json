@@ -1,0 +1,20 @@
+{
+  "name": "ru.longbombus.urid",
+  "displayName": "URID",
+  "author": {
+    "name": "Denis Lazarev",
+    "url": "https://readable.id/"
+  },
+  "version": "0.0.1",
+  "unity": "2022.3",
+  "description": "Universal Readable ID packed into 128-bits and 64-bits",
+  "keywords": [
+    "id",
+    "guid",
+    "string",
+    "value-type"
+  ],
+  "license": "MIT",
+  "category": "Utilities",
+  "dependencies": {}
+}
