@@ -68,7 +68,7 @@ namespace URID
 			24, 24, 24, 24, 24,
 			25, 25, 25, 25, 25,
 			26, 26, 26, 26,
-			27, 
+			27,
 		};
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -102,21 +102,32 @@ namespace URID
 			=> LettersCountToBitsCount[lettersCount];
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static void GetWordLengthPrefixInfo(int bitsRemain, out int prefixMask, out int prefixSize)
+		public static int GetLettersCountUnsafe(int bitsCount)
+			=> BitsCountToLettersCount[bitsCount];
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public static void GetWordPrefixInfo(int bitsRemain, out ulong prefixMask, out int prefixBitsCount)
 		{
 			int lettersRemain = BitsCountToLettersCount[bitsRemain];
-			prefixSize = (int)math.ceil(math.log2(lettersRemain));
-			if (prefixSize <= bitsRemain)
+			prefixBitsCount = (int)math.ceil(math.log2(lettersRemain));
+			if (bitsRemain <= prefixBitsCount)
 			{
-				prefixSize = 0;
+				prefixBitsCount = 0;
 				prefixMask = 0;
 			}
 			else
 			{
-				lettersRemain = BitsCountToLettersCount[bitsRemain - prefixSize];
-				prefixSize = (int)math.ceil(math.log2(lettersRemain));
-				prefixMask = (1 << prefixSize) - 1;
+				lettersRemain = BitsCountToLettersCount[bitsRemain - prefixBitsCount];
+				prefixBitsCount = (int)math.ceil(math.log2(lettersRemain));
+				prefixMask = (1ul << prefixBitsCount) - 1ul;
 			}
+		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public static void GetWordInfo(int wordLettersCount, out ulong wordMask, out int wordBitsCount)
+		{
+			wordBitsCount = LettersCountToBitsCount[wordLettersCount];
+			wordMask = (1ul << wordBitsCount) - 1ul;
 		}
 	}
 }
