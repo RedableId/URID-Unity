@@ -17,27 +17,27 @@ namespace URID
 		{
 			Low = default;
 			High = default;
-			fixed (byte* BytesPtr = Bytes)
+			fixed (byte* bytesPtr = Bytes)
 			{
-				guid.TryWriteBytes(new Span<byte>(BytesPtr, BytesCount));
+				guid.TryWriteBytes(new Span<byte>(bytesPtr, BytesCount));
 			}
 		}
 
 		public static implicit operator Guid(Urid128 urid)
 			=> new Guid(new ReadOnlySpan<byte>(urid.Bytes, BytesCount));
 
-        public int CompareTo(Urid128 other)
+		public int CompareTo(Urid128 other)
 			=> High != other.High
 				? High.CompareTo(other.High)
 				: Low.CompareTo(other.Low);
 
-        public readonly bool Equals(Urid128 other)
+		public readonly bool Equals(Urid128 other)
 			=> Low == other.Low && High == other.High;
 
-		public override readonly bool Equals(object obj)
+		public readonly override bool Equals(object obj)
 			=> obj is Urid128 other && Low == other.Low && High == other.High;
 
-		public override readonly int GetHashCode()
+		public readonly override int GetHashCode()
 			=> (int)(Low ^ (Low >> 32) ^ High ^ (High >> 32));
 	}
 }

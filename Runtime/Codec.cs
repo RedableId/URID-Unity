@@ -5,48 +5,134 @@ namespace URID
 {
 	public static class Codec
 	{
-		private readonly static IFormatProvider FormatProvider = System.Globalization.CultureInfo.InvariantCulture;
+		private static readonly IFormatProvider FormatProvider = System.Globalization.CultureInfo.InvariantCulture;
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static unsafe void DecodeUnsafe(char* dstBuffer, int dstCapacity, ref int dstLength, ulong srcEncoded, int srcBitsRemain)
+		public static void Decode(
+			ulong encodedId,
+			Span<char> decodedId,
+			out int decodedCharsCount,
+			char wordsSeparator = Defaults.WordsSeparator,
+			char indexSeparator = Defaults.IndexSeparator
+		)
 		{
-			int prefixSize;
+			int encodedIdBitsRemain = 64;
+			decodedCharsCount = 0;
 			do
 			{
-				int wordBegin = dstLength;
-				Alphabet.GetWordPrefixInfo(srcBitsRemain, out var prefixMask, out prefixSize);
-				if (prefixSize <= 0)
+				int decodedWordBegin = decodedCharsCount;
+				int encodedPrefixBitsCount = Alphabet.GetWordPrefixBitsCount(encodedIdBitsRemain);
+				if (encodedPrefixBitsCount <= 0)
 					break;
 
-				int wordLettersRemain = (int)((srcEncoded >> (srcBitsRemain - prefixSize)) & prefixMask);
-				srcBitsRemain -= prefixSize;
+				ulong encodedPrefixMask = (1ul << encodedPrefixBitsCount) - 1;
+				int encodedLettersCount = (int)((encodedId >> (encodedIdBitsRemain - encodedPrefixBitsCount)) & encodedPrefixMask);
+				encodedIdBitsRemain -= encodedPrefixBitsCount;
 
-				if (wordLettersRemain == 0)
+				if (encodedLettersCount == 0)
 					break;
 
-				Alphabet.GetWordInfo(wordLettersRemain, out var wordMask, out var wordBitsCount);
-				var encodedWord = (srcEncoded >> srcBitsRemain) & wordMask;
-				srcBitsRemain -= wordBitsCount;
-				for (; wordLettersRemain > 0; --wordLettersRemain)
+				int encodedLettersBitsCount = Alphabet.GetWordLettersBitsCount(encodedLettersCount);
+				ulong encodedLettersMask = (1ul << encodedLettersBitsCount) - 1;
+				var encodedWord = (encodedId >> (encodedIdBitsRemain - encodedLettersBitsCount)) & encodedLettersMask;
+				encodedIdBitsRemain -= encodedLettersBitsCount;
+
+				if (wordsSeparator != '\0' && decodedCharsCount != 0)
+					decodedId[decodedCharsCount++] = wordsSeparator;
+
+				for (int wordLettersRemain = encodedLettersCount; wordLettersRemain > 0; --wordLettersRemain)
 				{
 					ulong letterCode = encodedWord % Alphabet.LettersCount;
 					encodedWord /= Alphabet.LettersCount;
-					dstBuffer[dstLength++] = Alphabet.DecodeLowerUnsafe((int)letterCode);
+					decodedId[decodedCharsCount++] = Alphabet.DecodeLower((int)letterCode);
 				}
 
-				MemoryExtensions.Reverse(new Span<char>(dstBuffer + wordBegin, dstLength - wordBegin));
+				decodedId.Slice(decodedWordBegin, decodedCharsCount - decodedWordBegin).Reverse();
 			}
-			while (srcBitsRemain > 0);
+			while (encodedIdBitsRemain > 0);
 
-			DecodeIndex(dstBuffer, dstCapacity, ref dstLength, srcEncoded, srcBitsRemain);
+			DecodeIndex(encodedId, encodedIdBitsRemain, decodedId, ref decodedCharsCount, indexSeparator);
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		private static unsafe void DecodeIndex(char* dstBuffer, int dstCapacity, ref int dstLength, ulong encoded, int encodedBitsRemain)
+		private static void DecodeIndex(ulong encodedId, int encodedBitsRemain, Span<char> decodedId, ref int decodedCharsCount, char indexSeparator)
 		{
-			ulong index = encoded & ((1ul << encodedBitsRemain) - 1ul);
-			index.TryFormat(new Span<char>(dstBuffer + dstLength, dstCapacity - dstLength), out var indexLength, "N", FormatProvider);
-			dstLength += indexLength;
+			ulong index = encodedId & ((1ul << encodedBitsRemain) - 1ul);
+			if (index == 0ul)
+				return;
+
+			if (indexSeparator != '\0')
+				decodedId[decodedCharsCount++] = indexSeparator;
+
+			index.TryFormat(decodedId.Slice(decodedCharsCount), out var indexLength, null, FormatProvider);
+			decodedCharsCount += indexLength;
+		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public static void Encode(ReadOnlySpan<char> decodedId, out ulong encodedId, out EncodingError error)
+		{
+			const int encodedBitsCount = 64;
+			error = EncodingError.None;
+			Encode(decodedId, out encodedId, out var nameBitsCount, out var index);
+			encodedId |= index;
+			if (nameBitsCount > encodedBitsCount)
+				error |= EncodingError.LettersOverflow;
+
+			if (index != 0ul && nameBitsCount > encodedBitsCount - MathI.Log2(index))
+				error |= EncodingError.IndexOverflow;
+		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public static void Encode(ReadOnlySpan<char> decodedId, out ulong encodedName, out int encodedNameBitsCount, out ulong encodedIndex)
+		{
+			const int encodedNameCapacity = 64;
+			encodedName = 0;
+			encodedNameBitsCount = 0;
+			int descriptorNextIndex = 0;
+			ulong code = default;
+			encodedIndex = 0ul;
+			while (descriptorNextIndex < decodedId.Length)
+			{
+				TokenType token;
+				do token = Alphabet.Encode(decodedId[descriptorNextIndex++], ref code);
+				while (token == TokenType.Separator);
+
+				if ((token & TokenType.Letter) != 0) // word
+				{
+					ulong encodedLetters = code;
+					int encodedLettersCount = 1;
+					while (descriptorNextIndex < decodedId.Length)
+					{
+						token = Alphabet.Encode(decodedId[descriptorNextIndex], ref code);
+						if (token != TokenType.LetterLower)
+							break;
+
+						encodedLetters = encodedLetters * Alphabet.LettersCount + code;
+						++encodedLettersCount;
+						++descriptorNextIndex;
+					}
+
+					int encodedPrefixBitsCount = Alphabet.GetWordPrefixBitsCount(encodedNameCapacity - encodedNameBitsCount);
+					int encodedLettersBitsCount = Alphabet.GetWordLettersBitsCount(encodedLettersCount);
+					int encodedWordBitsCount = encodedPrefixBitsCount + encodedLettersBitsCount;
+					ulong encodedWord = ((ulong)encodedLettersCount << encodedLettersBitsCount) | encodedLetters;
+					encodedName |= encodedWord << (encodedNameCapacity - encodedNameBitsCount - encodedWordBitsCount);
+					encodedNameBitsCount += encodedWordBitsCount;
+				}
+				else // index
+				{
+					for (encodedIndex = code; descriptorNextIndex < decodedId.Length; ++descriptorNextIndex)
+					{
+						token = Alphabet.Encode(decodedId[descriptorNextIndex], ref code);
+						if (token == TokenType.Digit)
+							encodedIndex = encodedIndex * 10ul + code;
+						else
+							break;
+					}
+
+					encodedName += encodedIndex;
+				}
+			}
 		}
 	}
 }

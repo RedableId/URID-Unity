@@ -10,34 +10,32 @@ namespace URID
 		public const int BitsCount = BytesCount * 8;
 
 		[FieldOffset(0)] public fixed byte Bytes[BytesCount];
-		[FieldOffset(0)] public ulong Encoded;
+		[FieldOffset(0)] public ulong EncodedId;
 
-		public Urid64(ulong encoded)
-		{
-			Encoded = encoded;
-		}
+		public Urid64(ulong encodedId)
+			=> EncodedId = encodedId;
+
+		public Urid64(ReadOnlySpan<char> decodedId)
+			=> Codec.Encode(decodedId, out EncodedId, out _);
 
 		public int CompareTo(Urid64 other)
-			=> Encoded.CompareTo(other.Encoded);
+			=> EncodedId.CompareTo(other.EncodedId);
 
 		public readonly bool Equals(Urid64 other)
-			=> Encoded == other.Encoded;
+			=> EncodedId == other.EncodedId;
 
-		public override readonly bool Equals(object obj)
-			=> obj is Urid64 other && Encoded == other.Encoded;
+		public readonly override bool Equals(object obj)
+			=> obj is Urid64 other && EncodedId == other.EncodedId;
 
-		public override readonly int GetHashCode()
-			=> (int)(Encoded ^ (Encoded >> 32));
+		public readonly override int GetHashCode()
+			=> (int)(EncodedId ^ (EncodedId >> 32));
 
-		public override readonly string ToString()
+		public readonly override string ToString()
 		{
-			const int resultCapacity = 32; // TODO: calculate more precisely
-			var resultBuffer = stackalloc char[resultCapacity];
-			var resultLength = 0;
-
-			Codec.DecodeUnsafe(resultBuffer, resultCapacity, ref resultLength, Encoded, BitsCount);
-
-			return new string(resultBuffer, 0, resultLength);
+			const int decodedCapacity = 32; // TODO: calculate more precisely
+			var decodedBuffer = stackalloc char[decodedCapacity];
+			Codec.Decode(EncodedId, new Span<char>(decodedBuffer, decodedCapacity), out int decodedCharsCount);
+			return new string(decodedBuffer, 0, decodedCharsCount);
 		}
 	}
 }
