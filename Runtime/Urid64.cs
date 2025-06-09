@@ -37,5 +37,13 @@ namespace URID
 			Codec.Decode(EncodedId, new Span<char>(decodedBuffer, decodedCapacity), out int decodedCharsCount);
 			return new string(decodedBuffer, 0, decodedCharsCount);
 		}
+
+		public readonly string ToString(char wordsSeparator = Defaults.WordsSeparator, char indexSeparator = Defaults.IndexSeparator)
+		{
+			const int decodedCapacity = 32; // TODO: calculate more precisely
+			var decodedBuffer = stackalloc char[decodedCapacity];
+			Codec.Decode(EncodedId, new Span<char>(decodedBuffer, decodedCapacity), out int decodedCharsCount, wordsSeparator, indexSeparator);
+			return new string(decodedBuffer, 0, decodedCharsCount);
+		}
 	}
 }

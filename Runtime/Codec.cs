@@ -20,7 +20,6 @@ namespace URID
 			decodedCharsCount = 0;
 			do
 			{
-				int decodedWordBegin = decodedCharsCount;
 				int encodedPrefixBitsCount = Alphabet.GetWordPrefixBitsCount(encodedIdBitsRemain);
 				if (encodedPrefixBitsCount <= 0)
 					break;
@@ -34,24 +33,52 @@ namespace URID
 
 				int encodedLettersBitsCount = Alphabet.GetWordLettersBitsCount(encodedLettersCount);
 				ulong encodedLettersMask = (1ul << encodedLettersBitsCount) - 1;
-				var encodedWord = (encodedId >> (encodedIdBitsRemain - encodedLettersBitsCount)) & encodedLettersMask;
+				var encodedLetters = (encodedId >> (encodedIdBitsRemain - encodedLettersBitsCount)) & encodedLettersMask;
 				encodedIdBitsRemain -= encodedLettersBitsCount;
 
-				if (wordsSeparator != '\0' && decodedCharsCount != 0)
-					decodedId[decodedCharsCount++] = wordsSeparator;
-
-				for (int wordLettersRemain = encodedLettersCount; wordLettersRemain > 0; --wordLettersRemain)
-				{
-					ulong letterCode = encodedWord % Alphabet.LettersCount;
-					encodedWord /= Alphabet.LettersCount;
-					decodedId[decodedCharsCount++] = Alphabet.DecodeLower((int)letterCode);
-				}
-
-				decodedId.Slice(decodedWordBegin, decodedCharsCount - decodedWordBegin).Reverse();
+				if (wordsSeparator == '\0')
+					DecodeLettersPascalCase(encodedLetters, encodedLettersCount, decodedId, ref decodedCharsCount);
+				else
+					DecodeLettersWithSeparator(encodedLetters, encodedLettersCount, decodedId, ref decodedCharsCount, wordsSeparator);
 			}
 			while (encodedIdBitsRemain > 0);
 
 			DecodeIndex(encodedId, encodedIdBitsRemain, decodedId, ref decodedCharsCount, indexSeparator);
+		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		private static void DecodeLettersWithSeparator(ulong encodedLetters, int encodedLettersCount, Span<char> decodedId, ref int decodedCharsCount, char wordsSeparator)
+		{
+			if (decodedCharsCount != 0)
+				decodedId[decodedCharsCount++] = wordsSeparator;
+
+			int decodedWordBegin = decodedCharsCount;
+			for (int decodedCharIndex = decodedWordBegin + encodedLettersCount - 1; decodedCharIndex >= decodedWordBegin; --decodedCharIndex)
+			{
+				var letterCode = encodedLetters % Alphabet.LettersCount;
+				encodedLetters /= Alphabet.LettersCount;
+				decodedId[decodedCharIndex] = Alphabet.DecodeLower((int)letterCode);
+			}
+
+			decodedCharsCount += encodedLettersCount;
+		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		private static void DecodeLettersPascalCase(ulong encodedLetters, int encodedLettersCount, Span<char> decodedId, ref int decodedCharsCount)
+		{
+			ulong letterCode;
+			int decodedWordBegin = decodedCharsCount;
+			for (int decodedCharIndex = decodedWordBegin + encodedLettersCount - 1; decodedCharIndex > decodedWordBegin; --decodedCharIndex)
+			{
+				letterCode = encodedLetters % Alphabet.LettersCount;
+				encodedLetters /= Alphabet.LettersCount;
+				decodedId[decodedCharIndex] = Alphabet.DecodeLower((int)letterCode);
+			}
+
+			letterCode = encodedLetters % Alphabet.LettersCount;
+			decodedId[decodedWordBegin] = Alphabet.DecodeUpper((int)letterCode);
+
+			decodedCharsCount += encodedLettersCount;
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
