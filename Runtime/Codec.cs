@@ -16,51 +16,70 @@ namespace URID
 			char indexSeparator = Defaults.IndexSeparator
 		)
 		{
+			if (wordsSeparator == '\0')
+				DecodePascalCase(encodedId, decodedId, out decodedCharsCount, indexSeparator);
+			else
+				DecodeSeparated(encodedId, decodedId, out decodedCharsCount, wordsSeparator, indexSeparator);
+		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		private static void DecodePascalCase(
+			ulong encodedId,
+			Span<char> decodedId,
+			out int decodedCharsCount,
+			char indexSeparator
+		)
+		{
 			int encodedIdBitsRemain = 64;
+			ulong encodedLetters = default;
+			int encodedLettersCount = default;
 			decodedCharsCount = 0;
 			do
-			{
-				int encodedPrefixBitsCount = Alphabet.GetWordPrefixBitsCount(encodedIdBitsRemain);
-				if (encodedPrefixBitsCount <= 0)
-					break;
-
-				ulong encodedPrefixMask = (1ul << encodedPrefixBitsCount) - 1;
-				int encodedLettersCount = (int)((encodedId >> (encodedIdBitsRemain - encodedPrefixBitsCount)) & encodedPrefixMask);
-				encodedIdBitsRemain -= encodedPrefixBitsCount;
-
-				if (encodedLettersCount == 0)
-					break;
-
-				int encodedLettersBitsCount = Alphabet.GetWordLettersBitsCount(encodedLettersCount);
-				ulong encodedLettersMask = (1ul << encodedLettersBitsCount) - 1;
-				var encodedLetters = (encodedId >> (encodedIdBitsRemain - encodedLettersBitsCount)) & encodedLettersMask;
-				encodedIdBitsRemain -= encodedLettersBitsCount;
-
-				if (wordsSeparator == '\0')
+				if (DecodePrefix(encodedId, ref encodedIdBitsRemain, ref encodedLetters, ref encodedLettersCount))
 					DecodeLettersPascalCase(encodedLetters, encodedLettersCount, decodedId, ref decodedCharsCount);
 				else
-					DecodeLettersWithSeparator(encodedLetters, encodedLettersCount, decodedId, ref decodedCharsCount, wordsSeparator);
-			}
+					break;
 			while (encodedIdBitsRemain > 0);
 
 			DecodeIndex(encodedId, encodedIdBitsRemain, decodedId, ref decodedCharsCount, indexSeparator);
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		private static void DecodeLettersWithSeparator(ulong encodedLetters, int encodedLettersCount, Span<char> decodedId, ref int decodedCharsCount, char wordsSeparator)
+		private static void DecodeSeparated(ulong encodedId, Span<char> decodedId, out int decodedCharsCount, char wordsSeparator, char indexSeparator)
 		{
-			if (decodedCharsCount != 0)
-				decodedId[decodedCharsCount++] = wordsSeparator;
+			int encodedIdBitsRemain = 64;
+			ulong encodedLetters = default;
+			int encodedLettersCount = default;
+			decodedCharsCount = 0;
+			do
+				if (DecodePrefix(encodedId, ref encodedIdBitsRemain, ref encodedLetters, ref encodedLettersCount))
+					DecodeLettersSeparated(encodedLetters, encodedLettersCount, decodedId, ref decodedCharsCount, wordsSeparator);
+				else
+					break;
+			while (encodedIdBitsRemain > 0);
 
-			int decodedWordBegin = decodedCharsCount;
-			for (int decodedCharIndex = decodedWordBegin + encodedLettersCount - 1; decodedCharIndex >= decodedWordBegin; --decodedCharIndex)
-			{
-				var letterCode = encodedLetters % Alphabet.LettersCount;
-				encodedLetters /= Alphabet.LettersCount;
-				decodedId[decodedCharIndex] = Alphabet.DecodeLower((int)letterCode);
-			}
+			DecodeIndex(encodedId, encodedIdBitsRemain, decodedId, ref decodedCharsCount, indexSeparator);
+		}
 
-			decodedCharsCount += encodedLettersCount;
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		private static bool DecodePrefix(ulong encodedId, ref int encodedIdBitsRemain, ref ulong encodedLetters, ref int encodedLettersCount)
+		{
+			int encodedPrefixBitsCount = Alphabet.GetWordPrefixBitsCount(encodedIdBitsRemain);
+			if (encodedPrefixBitsCount <= 0)
+				return false;
+
+			ulong encodedPrefixMask = (1ul << encodedPrefixBitsCount) - 1;
+			encodedLettersCount = (int)((encodedId >> (encodedIdBitsRemain - encodedPrefixBitsCount)) & encodedPrefixMask);
+			encodedIdBitsRemain -= encodedPrefixBitsCount;
+
+			if (encodedLettersCount == 0)
+				return false;
+
+			int encodedLettersBitsCount = Alphabet.GetWordLettersBitsCount(encodedLettersCount);
+			ulong encodedLettersMask = (1ul << encodedLettersBitsCount) - 1;
+			encodedLetters = (encodedId >> (encodedIdBitsRemain - encodedLettersBitsCount)) & encodedLettersMask;
+			encodedIdBitsRemain -= encodedLettersBitsCount;
+			return true;
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -77,6 +96,23 @@ namespace URID
 
 			letterCode = encodedLetters % Alphabet.LettersCount;
 			decodedId[decodedWordBegin] = Alphabet.DecodeUpper((int)letterCode);
+
+			decodedCharsCount += encodedLettersCount;
+		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		private static void DecodeLettersSeparated(ulong encodedLetters, int encodedLettersCount, Span<char> decodedId, ref int decodedCharsCount, char wordsSeparator)
+		{
+			if (decodedCharsCount != 0)
+				decodedId[decodedCharsCount++] = wordsSeparator;
+
+			int decodedWordBegin = decodedCharsCount;
+			for (int decodedCharIndex = decodedWordBegin + encodedLettersCount - 1; decodedCharIndex >= decodedWordBegin; --decodedCharIndex)
+			{
+				var letterCode = encodedLetters % Alphabet.LettersCount;
+				encodedLetters /= Alphabet.LettersCount;
+				decodedId[decodedCharIndex] = Alphabet.DecodeLower((int)letterCode);
+			}
 
 			decodedCharsCount += encodedLettersCount;
 		}
